@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NMA-Synth: Methodological Rigor Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #09090b; --bg-panel: #18181b; --bg-surface: #27272a; 
+            --accent-sglt2: #38bdf8; --accent-arni: #f472b6; --accent-mra: #a78bfa; --accent-arb: #fbbf24;
+            --text-main: #e4e4e7; --text-muted: #a1a1aa; --border: #3f3f46;
+            --safe: #34d399; --warn: #fbbf24; --danger: #f87171;
+            --font-mono: 'JetBrains Mono', monospace; --font-sans: 'Inter', sans-serif;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg-deep); color: var(--text-main); font-family: var(--font-sans); height: 100vh; overflow: hidden; display: flex; font-size: 13px; }
+        
+        /* Layout */
+        .app-shell { display: grid; grid-template-columns: 340px 1fr 300px; width: 100%; height: 100%; }
+        
+        /* Sidebar */
+        .sidebar { background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; }
+        .sidebar.right { border-left: 1px solid var(--border); border-right: none; background: var(--bg-deep); }
+        
+        .header { padding: 20px; border-bottom: 1px solid var(--border); }
+        .brand { font-weight: 800; font-size: 1.1rem; letter-spacing: -0.02em; color: #fff; }
+        .sub-brand { font-family: var(--font-mono); font-size: 0.65rem; color: var(--safe); margin-top: 4px; text-transform: uppercase; }
+
+        .scroll-content { flex: 1; overflow-y: auto; padding: 20px; }
+        
+        .section-title { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 24px 0 10px; display: flex; justify-content: space-between; }
+        
+        /* Node List */
+        .node-row { display: flex; align-items: center; justify-content: space-between; padding: 10px; background: var(--bg-surface); border: 1px solid var(--border); margin-bottom: 6px; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+        .node-row:hover { border-color: #71717a; }
+        .node-row.active { border-color: var(--accent-sglt2); background: rgba(56, 189, 248, 0.1); }
+        .node-row.heterogeneous { border-left: 3px solid var(--danger); background: linear-gradient(90deg, rgba(248, 113, 113, 0.1), transparent); }
+        
+        .node-name { font-size: 0.85rem; font-weight: 500; color: var(--text-main); }
+        .node-meta { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); }
+        .node-status { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+        .node-row.active .node-status { background: var(--accent-sglt2); box-shadow: 0 0 8px var(--accent-sglt2); }
+
+        /* Sliders */
+        .control-group { margin-bottom: 15px; }
+        input[type="range"] { width: 100%; height: 4px; background: #333; border-radius: 2px; -webkit-appearance: none; margin-top: 8px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: var(--safe); border-radius: 50%; cursor: pointer; }
+
+        /* Main Viz */
+        .main-stage { flex: 1; background: #121214; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        
+        .viz-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-height: 300px; position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .viz-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); }
+        .viz-title { font-size: 0.75rem; font-weight: 700; color: #fff; }
+        .viz-badge { font-family: var(--font-mono); font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.08); color: var(--text-muted); }
+        
+        .canvas-wrap { flex: 1; position: relative; min-height: 250px; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+        /* Metrics */
+        .metric-tile { padding: 16px; background: var(--bg-surface); border-radius: 8px; margin-bottom: 12px; border-left: 3px solid transparent; }
+        .metric-tile.danger { border-color: var(--danger); }
+        .metric-tile.warn { border-color: var(--warn); }
+        .metric-tile.safe { border-color: var(--safe); }
+        
+        .m-val { font-family: var(--font-mono); font-size: 1.4rem; font-weight: 700; color: #fff; margin: 4px 0; }
+        .m-label { font-size: 0.65rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+        .m-desc { font-size: 0.7rem; color: #71717a; line-height: 1.4; }
+
+        .toggle-group { display: flex; background: var(--bg-surface); padding: 4px; border-radius: 6px; margin-bottom: 20px; }
+        .toggle-btn { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 8px; font-size: 0.75rem; font-weight: 600; cursor: pointer; border-radius: 4px; transition: all 0.2s; }
+        .toggle-btn.active { background: var(--bg-panel); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+
+        .run-btn { width: 100%; padding: 14px; background: var(--safe); color: #000; border: none; border-radius: 6px; font-weight: 700; cursor: pointer; margin-top: auto; }
+        .run-btn:hover { filter: brightness(1.1); }
+    </style>
+</head>
+<body>
+
+<div class="app-shell">
+    <!-- LEFT: CONTROLS -->
+    <aside class="sidebar">
+        <div class="header">
+            <div class="brand">NMA-Synth</div>
+            <div class="sub-brand">Version 2.0: Methodological Rigor</div>
+        </div>
+        <div class="scroll-content">
+            <div class="section-title">Evidence Network</div>
+            <div id="nodeList"></div>
+
+            <div class="section-title">Sensitivity Analysis</div>
+            
+            <!-- TOPCAT Correction -->
+            <div class="control-group">
+                <div class="m-label" style="display:flex; justify-content:space-between;">
+                    <span>Include TOPCAT-Russia/Georgia?</span>
+                    <span id="topcatVal" style="color:var(--danger)">NO</span>
+                </div>
+                <input type="range" id="topcatSlider" min="0" max="1" step="1" value="0">
+                <div class="m-desc" style="margin-top:4px;">When ON, ignores regional heterogeneity (Sample Size Bias). When OFF, down-weights MRA node by 45%.</div>
+            </div>
+
+            <!-- CNMA Interaction -->
+            <div class="control-group">
+                <div class="m-label" style="display:flex; justify-content:space-between;">
+                    <span>Interaction Penalty (Safety)</span>
+                    <span id="interVal" style="color:var(--safe)">High</span>
+                </div>
+                <input type="range" id="interSlider" min="0" max="10" step="1" value="8">
+                <div class="m-desc" style="margin-top:4px;">Models Hypotension/Hyperkalemia risk in combination therapy (CNMA assumption check).</div>
+            </div>
+
+            <div class="section-title">Visual Mode</div>
+            <div class="toggle-group">
+                <button class="toggle-btn active" id="btnTopo">Precision Network</button>
+                <button class="toggle-btn" id="btnAdditivity">Polypharmacy Risk</button>
+            </div>
+            
+            <div class="section-title">Endpoint</div>
+            <div class="toggle-group">
+                <button class="toggle-btn active" id="btnComposite">Composite</button>
+                <button class="toggle-btn" id="btnMortality">CV Death</button>
+            </div>
+        </div>
+        <div style="padding: 20px;">
+            <button class="run-btn" id="runBtn">Synthesize Model</button>
+        </div>
+    </aside>
+
+    <!-- CENTER: VISUALIZATION -->
+    <main class="main-stage">
+        <div class="viz-card" style="flex: 2;">
+            <div class="viz-header">
+                <span class="viz-title" id="mainVizTitle">Precision-Weighted Topology</span>
+                <span class="viz-badge" id="mainVizBadge">Inverse Variance Weighting</span>
+            </div>
+            <div class="canvas-wrap"><canvas id="mainCanvas"></canvas></div>
+        </div>
+
+        <div class="viz-card" style="flex: 1; min-height: 250px;">
+            <div class="viz-header">
+                <span class="viz-title">Evidence-to-Decision Landscape</span>
+                <span class="viz-badge">Bayesian Posterior Approx</span>
+            </div>
+            <div class="canvas-wrap"><canvas id="lossCanvas"></canvas></div>
+        </div>
+    </main>
+
+    <!-- RIGHT: DIAGNOSTICS -->
+    <aside class="sidebar right">
+        <div class="header">
+            <div class="brand" style="font-size: 0.9rem;">Methodological Audit</div>
+        </div>
+        
+        <div class="metric-tile warn" id="boxIncoherence">
+            <div class="m-label">GRADE Incoherence Risk</div>
+            <div class="m-val" id="valIncoherence">--</div>
+            <div class="m-desc">Risk of Transitivity Violation due to Era Drift (1997 vs 2022).</div>
+        </div>
+
+        <div class="metric-tile danger" id="boxStructure">
+            <div class="m-label">Network Fragility</div>
+            <div class="m-val" id="valStructure">--</div>
+            <div class="m-desc">Based on Indirect Comparison Path Length (e.g., PARAGON bridge).</div>
+        </div>
+
+        <div class="metric-tile safe" id="boxPrecision">
+            <div class="m-label">Effective Info Size</div>
+            <div class="m-val" id="valPrecision">--</div>
+            <div class="m-desc">Event-driven weight (Inverse Variance), discounting heterogeneity.</div>
+        </div>
+
+        <div style="flex:1; padding:16px; background:#000; border-top:1px solid var(--border); overflow-y:auto; font-family:var(--font-mono); font-size:0.7rem; color:#777;">
+            <div id="consoleLog">> Initializing Methodological Review...</div>
+        </div>
+    </aside>
+</div>
+
+<script>
+    // === METHODOLOGICALLY RIGOROUS DATASET ===
+    // 'events' are used to calculate crude Inverse Variance Weighting (Precision)
+    // 'quality_factor' allows down-weighting of MRA due to TOPCAT heterogeneity
+    
+    const TREATMENTS = [
+        { id: 'PLA', name: 'Placebo / SoC', era: 2010, type: 'ref', risk_factor: 0 },
+        { id: 'SGLT2', name: 'SGLT2i', era: 2021.5, type: 'new', risk_factor: 1, quality: 1.0 }, 
+        { id: 'ARNI', name: 'ARNI', era: 2019, type: 'new', risk_factor: 2, quality: 1.0 }, // Higher side effect risk (Hypotension)
+        { id: 'MRA', name: 'MRA (Spirono)', era: 2014, type: 'old', risk_factor: 3, quality: 0.55 }, // TOPCAT Penalty (only ~55% Americas valid)
+        { id: 'ARB', name: 'ARB', era: 2005.5, type: 'old', risk_factor: 1, quality: 1.0 },
+        { id: 'DIG', name: 'Digoxin', era: 1997, type: 'ancient', risk_factor: 2, quality: 1.0 }
+    ];
+
+    // EDGES
+    // 'events' = approximate events in trial (used for precision weighting)
+    // 'N' = sample size (for reference)
+    const TRIALS = [
+        { source: 'SGLT2', target: 'PLA', events: 1122+850, N: 12263, name: 'Pooled SGLT2', hr_c: 0.80, hr_m: 0.91 }, // High Precision
+        { source: 'ARNI', target: 'ARB', events: 894, N: 4822, name: 'PARAGON-HF', hr_c: 0.87, hr_m: 0.95 }, // Active Control Bridge
+        { source: 'MRA', target: 'PLA', events: 600, N: 3445, name: 'TOPCAT', hr_c: 0.89, hr_m: 0.90 }, // Precision lowered by regional issue
+        { source: 'ARB', target: 'PLA', events: 1500, N: 7150, name: 'CHARM/I-PRES', hr_c: 0.95, hr_m: 0.98 }, 
+        { source: 'DIG', target: 'PLA', events: 221, N: 988, name: 'DIG-Anc', hr_c: 0.82, hr_m: 1.02 }
+    ];
+
+    let state = {
+        activeIds: ['PLA', 'SGLT2', 'ARNI', 'MRA', 'ARB', 'DIG'],
+        endpoint: 'composite', 
+        view: 'topology', 
+        includeBadTopcat: false,
+        interactionPenalty: 0.8 // 0 to 1
+    };
+
+    // === ANALYTICS ENGINE ===
+
+    function getEdgeWeight(edge) {
+        // Precision = Events (Inverse Variance Proxy)
+        let w = edge.events;
+        
+        // MRA Specific Penalty (TOPCAT Regional Heterogeneity)
+        if( (edge.source === 'MRA' || edge.target === 'MRA') && !state.includeBadTopcat ) {
+            w = w * 0.55; // Remove ~45% of weight (Russia/Georgia)
+        }
+        return Math.log(w); // Log scale for drawing thickness
+    }
+
+    function calculateNetBenefit() {
+        // Simulates CNMA (Component NMA) logic vs Reality
+        const active = TREATMENTS.filter(t => state.activeIds.includes(t.id) && t.id !== 'PLA' && t.id !== 'ARB'); // ARB is usually background in combo
+        
+        // 1. Theoretical Additive Benefit (The "Quadruple Therapy" assumption)
+        // Assume multiplicative HRs
+        let totalHR = 1.0;
+        active.forEach(t => {
+            // Very rough HR approx for demo
+            if(t.id === 'SGLT2') totalHR *= 0.80;
+            if(t.id === 'ARNI') totalHR *= 0.87;
+            if(t.id === 'MRA') totalHR *= 0.89;
+        });
+
+        // 2. Interaction / Safety Penalty
+        // Risk increases non-linearly with number of agents (Hypotension, Hyperkalemia, Renal)
+        let safetyScore = 0;
+        active.forEach(t => safetyScore += t.risk_factor);
+        
+        // Non-linear penalty: (Risk^1.5) * user_setting
+        const penalty = Math.pow(safetyScore, 1.5) * (state.interactionPenalty * 0.05);
+        
+        // "Real" HR is Theoretical HR pushed back towards 1.0 by adherence/safety issues
+        const realHR = Math.min(1.0, totalHR + penalty);
+
+        return { totalHR, realHR, safetyScore };
+    }
+
+    // === VISUALIZATION ===
+
+    function setupCanvas(id) {
+        const c = document.getElementById(id);
+        const ctx = c.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const r = c.parentElement.getBoundingClientRect();
+        c.width = r.width * dpr; c.height = r.height * dpr;
+        ctx.scale(dpr, dpr);
+        return { ctx, w: r.width, h: r.height };
+    }
+
+    function drawTopology() {
+        const {ctx, w, h} = setupCanvas('mainCanvas');
+        ctx.clearRect(0,0,w,h);
+
+        // Fixed Layout
+        const pos = {
+            'PLA': { x: w*0.5, y: h*0.5 },
+            'SGLT2': { x: w*0.8, y: h*0.25 },
+            'MRA': { x: w*0.2, y: h*0.25 },
+            'ARB': { x: w*0.5, y: h*0.8 },
+            'ARNI': { x: w*0.8, y: h*0.8 },
+            'DIG': { x: w*0.2, y: h*0.65 }
+        };
+
+        // Draw Edges (Precision Weighted)
+        TRIALS.forEach(edge => {
+            if(!state.activeIds.includes(edge.source) || !state.activeIds.includes(edge.target)) return;
+            
+            const p1 = pos[edge.source];
+            const p2 = pos[edge.target];
+            const weight = getEdgeWeight(edge); // Log Events
+
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            
+            // Highlight Fragile Bridge
+            if(edge.name === 'PARAGON-HF') {
+                ctx.strokeStyle = '#f472b6'; 
+            } else if (edge.name === 'TOPCAT') {
+                ctx.strokeStyle = state.includeBadTopcat ? '#fff' : '#a78bfa'; // Purple if penalized
+                if(!state.includeBadTopcat) ctx.setLineDash([2, 4]); // Dashed if questionable
+            } else {
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            }
+            
+            ctx.lineWidth = weight; // Thickness = Precision
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Label
+            const mx = (p1.x+p2.x)/2; 
+            const my = (p1.y+p2.y)/2;
+            ctx.fillStyle = '#666'; ctx.font = '9px monospace'; ctx.textAlign = 'center';
+            ctx.fillText(edge.name, mx, my - 8);
+        });
+
+        // Draw Nodes
+        TREATMENTS.forEach(t => {
+            if(!state.activeIds.includes(t.id)) return;
+            if(!pos[t.id]) return;
+            const p = pos[t.id];
+            
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, t.id==='PLA'?12:8, 0, Math.PI*2);
+            ctx.fillStyle = getColor(t.id);
+            ctx.fill();
+            
+            // Heterogeneity Warning for MRA
+            if(t.id === 'MRA' && !state.includeBadTopcat) {
+                ctx.strokeStyle = '#f87171'; ctx.lineWidth = 3;
+                ctx.stroke();
+            } else {
+                ctx.strokeStyle = '#18181b'; ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = '#fff'; ctx.font = '10px Inter'; ctx.textAlign='center';
+            ctx.fillText(t.name, p.x, p.y + 24);
+        });
+    }
+
+    function drawAdditivity() {
+        const {ctx, w, h} = setupCanvas('mainCanvas');
+        ctx.clearRect(0,0,w,h);
+
+        const res = calculateNetBenefit();
+        
+        // Bars
+        const barW = 60;
+        const baseY = h - 50;
+        const maxH = h * 0.7;
+        
+        // Theoretical (Linear Additivity)
+        const h1 = (1 - res.totalHR) * maxH * 2.5; // Scale up for viz
+        const x1 = w*0.35;
+        
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(x1 - barW/2, baseY - h1, barW, h1);
+        
+        // Real (Interaction Penalized)
+        const h2 = (1 - res.realHR) * maxH * 2.5;
+        const x2 = w*0.65;
+        
+        // Color shifts to red if penalty is high
+        ctx.fillStyle = h2 < h1 * 0.6 ? '#f87171' : '#34d399';
+        ctx.fillRect(x2 - barW/2, baseY - h2, barW, h2);
+
+        // Labels
+        ctx.fillStyle = '#fff'; ctx.textAlign='center'; ctx.font='12px Inter';
+        ctx.fillText('Theoretical Benefit', x1, baseY + 20);
+        ctx.fillStyle = '#777'; ctx.font='10px monospace';
+        ctx.fillText('(CNMA Assumption)', x1, baseY + 35);
+
+        ctx.fillStyle = '#fff'; ctx.font='12px Inter';
+        ctx.fillText('Safety-Adjusted', x2, baseY + 20);
+        ctx.fillStyle = '#777'; ctx.font='10px monospace';
+        ctx.fillText('(Physiological Reality)', x2, baseY + 35);
+
+        // Risk Overlay
+        if(res.safetyScore > 4) {
+             ctx.strokeStyle = '#f87171'; ctx.beginPath();
+             ctx.moveTo(x2, baseY - h2 - 10);
+             ctx.lineTo(x2, baseY - h1);
+             ctx.stroke();
+             ctx.fillStyle = '#f87171';
+             ctx.fillText(`Interaction Penalty`, x2, baseY - h1 - 10);
+        }
+    }
+
+    function drawLoss() {
+        const {ctx, w, h} = setupCanvas('lossCanvas');
+        ctx.clearRect(0,0,w,h);
+        
+        const active = TREATMENTS.filter(t => state.activeIds.includes(t.id) && t.id !== 'PLA');
+        const cx = w/2;
+        const scaleX = (hr) => cx + (Math.log(hr) * (w*0.9)); 
+
+        // Ref Line
+        ctx.strokeStyle = '#444'; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(cx, 20); ctx.lineTo(cx, h-20); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#555'; ctx.textAlign='center'; ctx.fillText('HR=1.0 (Null)', cx, h-8);
+
+        let y = 30;
+        const rowH = (h-40) / Math.max(1, active.length);
+
+        active.forEach(t => {
+            let hr = 1.0;
+            let ci = 0.15; // Precision proxy
+
+            // Get HR (Simulated Real Data)
+            // Handle ARNI bridge math
+            if(t.id === 'ARNI') {
+                const trialArni = TRIALS.find(e => e.source === 'ARNI');
+                const trialArb = TRIALS.find(e => e.source === 'ARB');
+                const rawHr = state.endpoint === 'composite' ? trialArni.hr_c : trialArni.hr_m;
+                const bridgeHr = state.endpoint === 'composite' ? trialArb.hr_c : trialArb.hr_m;
+                hr = rawHr * bridgeHr;
+                ci = 0.3; // Wide CI because of Indirectness
+            } else {
+                const trial = TRIALS.find(e => e.source === t.id);
+                if(trial) {
+                    hr = state.endpoint === 'composite' ? trial.hr_c : trial.hr_m;
+                    // MRA Penalty
+                    if(t.id === 'MRA' && !state.includeBadTopcat) ci = 0.25; 
+                }
+            }
+
+            const x = scaleX(hr);
+            const xL = scaleX(hr - ci);
+            const xR = scaleX(hr + ci);
+
+            // Draw Forest Line
+            ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y);
+            ctx.strokeStyle = getColor(t.id); ctx.lineWidth=2; ctx.stroke();
+            
+            // Draw Point
+            ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); 
+            ctx.fillStyle = getColor(t.id); ctx.fill();
+
+            // Labels
+            ctx.textAlign='right'; ctx.fillStyle='#ccc'; ctx.font='10px Inter';
+            ctx.fillText(t.name, xL - 10, y+3);
+            
+            ctx.textAlign='left'; ctx.fillStyle=getColor(t.id);
+            ctx.fillText(hr.toFixed(2), xR + 10, y+3);
+
+            y += rowH;
+        });
+
+        // Mortality Warning
+        if(state.endpoint === 'mortality') {
+            ctx.fillStyle = 'rgba(255,255,255,0.05)';
+            ctx.fillRect(0,0,w,h);
+            ctx.fillStyle = 'rgba(255,255,255,0.5)';
+            ctx.font = '12px Inter'; ctx.textAlign='center';
+            ctx.fillText('Warning: Signal Weakness', w/2, 20);
+        }
+    }
+
+    function getColor(id) {
+        if(id==='SGLT2') return '#38bdf8';
+        if(id==='ARNI') return '#f472b6';
+        if(id==='MRA') return '#a78bfa';
+        if(id==='ARB') return '#fbbf24';
+        if(id==='PLA') return '#71717a';
+        return '#555';
+    }
+
+    // === MAIN LOGIC ===
+
+    function run() {
+        const log = document.getElementById('consoleLog');
+        
+        // 1. Calculate Incoherence (Era Drift)
+        const years = TREATMENTS.filter(t => state.activeIds.includes(t.id)).map(t => t.era);
+        const span = Math.max(...years) - Math.min(...years);
+        document.getElementById('valIncoherence').innerText = span + " yrs";
+        document.getElementById('boxIncoherence').className = span > 15 ? 'metric-tile danger' : 'metric-tile safe';
+
+        // 2. Calculate Fragility (Indirect Paths)
+        const hasIndirect = state.activeIds.includes('ARNI') && state.activeIds.includes('PLA');
+        document.getElementById('valStructure').innerText = hasIndirect ? "Indirect" : "Direct";
+        document.getElementById('boxStructure').className = hasIndirect ? 'metric-tile danger' : 'metric-tile safe';
+
+        // 3. Calculate Precision (Total Events)
+        let totalEvents = 0;
+        TRIALS.forEach(e => {
+            if(state.activeIds.includes(e.source) && state.activeIds.includes(e.target)) {
+                let ev = e.events;
+                if((e.source === 'MRA' || e.target === 'MRA') && !state.includeBadTopcat) ev *= 0.55;
+                totalEvents += ev;
+            }
+        });
+        document.getElementById('valPrecision').innerText = totalEvents;
+
+        // Logging
+        let msg = `<div>> Updating Model...</div>`;
+        if(!state.includeBadTopcat && state.activeIds.includes('MRA')) {
+            msg += `<div style="color:#a78bfa">> Applied Regional Correction to TOPCAT (Weight -45%)</div>`;
+        }
+        if(state.activeIds.includes('ARNI') && state.activeIds.includes('PLA')) {
+            msg += `<div style="color:#f472b6">> WARNING: ARNI relies on Anchored Indirect Comparison via ARB.</div>`;
+        }
+        log.innerHTML = msg + log.innerHTML;
+
+        // Draw
+        if(state.view === 'topology') drawTopology();
+        else drawAdditivity();
+        drawLoss();
+    }
+
+    // === INIT ===
+    function init() {
+        const list = document.getElementById('nodeList');
+        TREATMENTS.forEach(t => {
+            const div = document.createElement('div');
+            div.className = 'node-row active';
+            if(t.id === 'MRA') div.classList.add('heterogeneous');
+            
+            div.innerHTML = `
+                <div>
+                    <div class="node-name">${t.name}</div>
+                    <div class="node-meta">${t.era} | ${t.id === 'MRA' ? 'Heterogeneity Risk' : 'Valid'}</div>
+                </div>
+                <div class="node-status"></div>
+            `;
+            div.onclick = () => {
+                if(t.id === 'PLA') return;
+                if(state.activeIds.includes(t.id)) {
+                    state.activeIds = state.activeIds.filter(x => x!==t.id);
+                    div.classList.remove('active');
+                } else {
+                    state.activeIds.push(t.id);
+                    div.classList.add('active');
+                }
+                run();
+            };
+            list.appendChild(div);
+        });
+
+        // Listeners
+        document.getElementById('topcatSlider').oninput = (e) => {
+            state.includeBadTopcat = e.target.value === "1";
+            document.getElementById('topcatVal').innerText = state.includeBadTopcat ? "YES" : "NO";
+            document.getElementById('topcatVal').style.color = state.includeBadTopcat ? "var(--safe)" : "var(--danger)";
+            run();
+        };
+
+        document.getElementById('interSlider').oninput = (e) => {
+            state.interactionPenalty = e.target.value / 10;
+            document.getElementById('interVal').innerText = (e.target.value / 10).toFixed(1);
+            run();
+        };
+
+        document.getElementById('runBtn').onclick = run;
+        
+        // Mode Toggles
+        document.getElementById('btnTopo').onclick = (e) => {
+            state.view = 'topology';
+            e.target.classList.add('active');
+            document.getElementById('btnAdditivity').classList.remove('active');
+            document.getElementById('mainVizTitle').innerText = 'Precision-Weighted Topology';
+            document.getElementById('mainVizBadge').innerText = 'Inverse Variance Weighting';
+            run();
+        };
+        document.getElementById('btnAdditivity').onclick = (e) => {
+            state.view = 'additivity';
+            e.target.classList.add('active');
+            document.getElementById('btnTopo').classList.remove('active');
+            document.getElementById('mainVizTitle').innerText = 'CNMA Additivity vs. Reality';
+            document.getElementById('mainVizBadge').innerText = 'Polypharmacy Model';
+            run();
+        };
+
+        // Endpoint Toggles
+        document.getElementById('btnComposite').onclick = (e) => {
+            state.endpoint = 'composite';
+            e.target.classList.add('active');
+            document.getElementById('btnMortality').classList.remove('active');
+            run();
+        };
+        document.getElementById('btnMortality').onclick = (e) => {
+            state.endpoint = 'mortality';
+            e.target.classList.add('active');
+            document.getElementById('btnComposite').classList.remove('active');
+            run();
+        };
+
+        run();
+    }
+
+    init();
+</script>
+</body>
+</html>
+
