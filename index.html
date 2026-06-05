@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>NMA-Synth: Methodological Rigor Edition</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+    <!-- fonts removed for offline use -->
     <style>
         :root {
             --bg-deep: #09090b; --bg-panel: #18181b; --bg-surface: #27272a; 
@@ -177,30 +177,13 @@
     </aside>
 </div>
 
+<!-- Pure analytics core + dataset (single source of truth). Loaded before the UI script below. -->
+<script src="engine.js"></script>
 <script>
-    // === METHODOLOGICALLY RIGOROUS DATASET ===
-    // 'events' are used to calculate crude Inverse Variance Weighting (Precision)
-    // 'quality_factor' allows down-weighting of MRA due to TOPCAT heterogeneity
-    
-    const TREATMENTS = [
-        { id: 'PLA', name: 'Placebo / SoC', era: 2010, type: 'ref', risk_factor: 0 },
-        { id: 'SGLT2', name: 'SGLT2i', era: 2021.5, type: 'new', risk_factor: 1, quality: 1.0 }, 
-        { id: 'ARNI', name: 'ARNI', era: 2019, type: 'new', risk_factor: 2, quality: 1.0 }, // Higher side effect risk (Hypotension)
-        { id: 'MRA', name: 'MRA (Spirono)', era: 2014, type: 'old', risk_factor: 3, quality: 0.55 }, // TOPCAT Penalty (only ~55% Americas valid)
-        { id: 'ARB', name: 'ARB', era: 2005.5, type: 'old', risk_factor: 1, quality: 1.0 },
-        { id: 'DIG', name: 'Digoxin', era: 1997, type: 'ancient', risk_factor: 2, quality: 1.0 }
-    ];
-
-    // EDGES
-    // 'events' = approximate events in trial (used for precision weighting)
-    // 'N' = sample size (for reference)
-    const TRIALS = [
-        { source: 'SGLT2', target: 'PLA', events: 1122+850, N: 12263, name: 'Pooled SGLT2', hr_c: 0.80, hr_m: 0.91 }, // High Precision
-        { source: 'ARNI', target: 'ARB', events: 894, N: 4822, name: 'PARAGON-HF', hr_c: 0.87, hr_m: 0.95 }, // Active Control Bridge
-        { source: 'MRA', target: 'PLA', events: 600, N: 3445, name: 'TOPCAT', hr_c: 0.89, hr_m: 0.90 }, // Precision lowered by regional issue
-        { source: 'ARB', target: 'PLA', events: 1500, N: 7150, name: 'CHARM/I-PRES', hr_c: 0.95, hr_m: 0.98 }, 
-        { source: 'DIG', target: 'PLA', events: 221, N: 988, name: 'DIG-Anc', hr_c: 0.82, hr_m: 1.02 }
-    ];
+    // TREATMENTS, TRIALS and the pure functions (getEdgeWeight, calculateNetBenefit,
+    // eraSpan, totalEvents, bridgedArniHR, isConnected, getColor) are provided by
+    // engine.js as globals. This script owns only the mutable `state` and the
+    // DOM/canvas rendering.
 
     let state = {
         activeIds: ['PLA', 'SGLT2', 'ARNI', 'MRA', 'ARB', 'DIG'],
@@ -211,45 +194,7 @@
     };
 
     // === ANALYTICS ENGINE ===
-
-    function getEdgeWeight(edge) {
-        // Precision = Events (Inverse Variance Proxy)
-        let w = edge.events;
-        
-        // MRA Specific Penalty (TOPCAT Regional Heterogeneity)
-        if( (edge.source === 'MRA' || edge.target === 'MRA') && !state.includeBadTopcat ) {
-            w = w * 0.55; // Remove ~45% of weight (Russia/Georgia)
-        }
-        return Math.log(w); // Log scale for drawing thickness
-    }
-
-    function calculateNetBenefit() {
-        // Simulates CNMA (Component NMA) logic vs Reality
-        const active = TREATMENTS.filter(t => state.activeIds.includes(t.id) && t.id !== 'PLA' && t.id !== 'ARB'); // ARB is usually background in combo
-        
-        // 1. Theoretical Additive Benefit (The "Quadruple Therapy" assumption)
-        // Assume multiplicative HRs
-        let totalHR = 1.0;
-        active.forEach(t => {
-            // Very rough HR approx for demo
-            if(t.id === 'SGLT2') totalHR *= 0.80;
-            if(t.id === 'ARNI') totalHR *= 0.87;
-            if(t.id === 'MRA') totalHR *= 0.89;
-        });
-
-        // 2. Interaction / Safety Penalty
-        // Risk increases non-linearly with number of agents (Hypotension, Hyperkalemia, Renal)
-        let safetyScore = 0;
-        active.forEach(t => safetyScore += t.risk_factor);
-        
-        // Non-linear penalty: (Risk^1.5) * user_setting
-        const penalty = Math.pow(safetyScore, 1.5) * (state.interactionPenalty * 0.05);
-        
-        // "Real" HR is Theoretical HR pushed back towards 1.0 by adherence/safety issues
-        const realHR = Math.min(1.0, totalHR + penalty);
-
-        return { totalHR, realHR, safetyScore };
-    }
+    // getEdgeWeight(edge, state) and calculateNetBenefit(state) now live in engine.js.
 
     // === VISUALIZATION ===
 
@@ -283,7 +228,7 @@
             
             const p1 = pos[edge.source];
             const p2 = pos[edge.target];
-            const weight = getEdgeWeight(edge); // Log Events
+            const weight = getEdgeWeight(edge, state); // Log Events
 
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
@@ -339,7 +284,7 @@
         const {ctx, w, h} = setupCanvas('mainCanvas');
         ctx.clearRect(0,0,w,h);
 
-        const res = calculateNetBenefit();
+        const res = calculateNetBenefit(state);
         
         // Bars
         const barW = 60;
@@ -407,11 +352,7 @@
             // Get HR (Simulated Real Data)
             // Handle ARNI bridge math
             if(t.id === 'ARNI') {
-                const trialArni = TRIALS.find(e => e.source === 'ARNI');
-                const trialArb = TRIALS.find(e => e.source === 'ARB');
-                const rawHr = state.endpoint === 'composite' ? trialArni.hr_c : trialArni.hr_m;
-                const bridgeHr = state.endpoint === 'composite' ? trialArb.hr_c : trialArb.hr_m;
-                hr = rawHr * bridgeHr;
+                hr = bridgedArniHR(state.endpoint); // anchored indirect via ARB (engine.js)
                 ci = 0.3; // Wide CI because of Indirectness
             } else {
                 const trial = TRIALS.find(e => e.source === t.id);
@@ -454,23 +395,15 @@
         }
     }
 
-    function getColor(id) {
-        if(id==='SGLT2') return '#38bdf8';
-        if(id==='ARNI') return '#f472b6';
-        if(id==='MRA') return '#a78bfa';
-        if(id==='ARB') return '#fbbf24';
-        if(id==='PLA') return '#71717a';
-        return '#555';
-    }
+    // getColor(id) now lives in engine.js (single source of truth).
 
     // === MAIN LOGIC ===
 
     function run() {
         const log = document.getElementById('consoleLog');
         
-        // 1. Calculate Incoherence (Era Drift)
-        const years = TREATMENTS.filter(t => state.activeIds.includes(t.id)).map(t => t.era);
-        const span = Math.max(...years) - Math.min(...years);
+        // 1. Calculate Incoherence (Era Drift) — eraSpan() from engine.js
+        const span = eraSpan(state) ?? 0;
         document.getElementById('valIncoherence').innerText = span + " yrs";
         document.getElementById('boxIncoherence').className = span > 15 ? 'metric-tile danger' : 'metric-tile safe';
 
@@ -479,16 +412,8 @@
         document.getElementById('valStructure').innerText = hasIndirect ? "Indirect" : "Direct";
         document.getElementById('boxStructure').className = hasIndirect ? 'metric-tile danger' : 'metric-tile safe';
 
-        // 3. Calculate Precision (Total Events)
-        let totalEvents = 0;
-        TRIALS.forEach(e => {
-            if(state.activeIds.includes(e.source) && state.activeIds.includes(e.target)) {
-                let ev = e.events;
-                if((e.source === 'MRA' || e.target === 'MRA') && !state.includeBadTopcat) ev *= 0.55;
-                totalEvents += ev;
-            }
-        });
-        document.getElementById('valPrecision').innerText = totalEvents;
+        // 3. Calculate Precision (Total Events) — totalEvents() from engine.js
+        document.getElementById('valPrecision').innerText = totalEvents(state);
 
         // Logging
         let msg = `<div>> Updating Model...</div>`;
